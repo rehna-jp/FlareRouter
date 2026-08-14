@@ -127,5 +127,117 @@ contract VenueRouterTest is Test {
 
         assertEq(router.fxrp().balanceOf(realUser), balance - depositAmount, "balance should decrease by deposit");
     }
+
+    // --- Withdrawal flow: request -> warp past period -> claim directly ---
+    // Uses vm.warp to simulate the period passing without waiting real time.
+    // realUser already holds real Firelight shares from an earlier live
+    // deposit through the actual frontend, so this exercises a genuine
+    // existing position, not a freshly-minted test one.
+
+    function testFirelightWithdrawRequestAndClaim() public {
+        uint256 shareBalance = router.firelight().balanceOf(realUser);
+        if (shareBalance == 0) {
+            console.log("Skipping: realUser holds 0 Firelight shares right now");
+            return;
+        }
+
+        uint256 sharesToWithdraw = shareBalance < 5 * 1e6 ? shareBalance : 5 * 1e6;
+        uint256 periodAtRequest = router.firelight().currentPeriod();
+        uint256 fxrpBalanceBefore = router.fxrp().balanceOf(realUser);
+
+        vm.startPrank(realUser);
+        router.firelight().approve(address(router), sharesToWithdraw);
+        uint256 expectedAssets = router.requestWithdrawFromFirelight(sharesToWithdraw);
+        vm.stopPrank();
+
+        console.log("Requested withdrawal, shares:", sharesToWithdraw);
+        console.log("Expected assets:", expectedAssets);
+        console.log("Period at request:", periodAtRequest);
+
+        // No funds should have moved yet — this is a request, not a transfer.
+        assertEq(
+            router.fxrp().balanceOf(realUser), fxrpBalanceBefore, "no FXRP should move until claimed, not requested"
+        );
+
+        // Warp past the period boundary so the withdrawal becomes claimable.
+        uint48 targetTime = router.firelight().nextPeriodEnd() + 1;
+        vm.warp(targetTime);
+        console.log("Warped to timestamp:", targetTime);
+
+        // Claim must be called directly by the user against Firelight, NOT
+        // through VenueRouter — see the comment on requestWithdrawFromFirelight
+        // for why (claimWithdraw is keyed to msg.sender with no owner param).
+        vm.prank(realUser);
+        uint256 claimedAssets = router.firelight().claimWithdraw(periodAtRequest);
+
+        console.log("Claimed assets:", claimedAssets);
+
+        assertTrue(
+            router.firelight().isWithdrawClaimed(periodAtRequest, realUser), "withdrawal should be marked claimed"
+        );
+        assertEq(
+            router.fxrp().balanceOf(realUser),
+            fxrpBalanceBefore + claimedAssets,
+            "FXRP balance should increase by the claimed amount"
+        );
+    }
+
+    // --- Upshift instant withdraw: self-contained (deposit then withdraw) ---
+    // Doesn't depend on realUser already holding vFXRP — deposits within the
+    // fork first, so this is testable regardless of prior real chain state.
+
+    function testUpshiftInstantWithdraw() public {
+        uint256 balance = router.fxrp().balanceOf(realUser);
+        if (balance == 0) {
+            console.log("Skipping: realUser holds 0 FXRP right now");
+            return;
+        }
+
+        uint256 depositAmount = balance < 10 * 1e6 ? balance : 10 * 1e6;
+
+        // Capture share balance before AND after deposit, and only withdraw
+        // the delta (shares this deposit actually minted) — realUser may
+        // already hold a real pre-existing vFXRP balance from prior
+        // activity, and withdrawing the full balance would conflate that
+        // with this test's own deposit, making the fee assertion below
+        // meaningless (comparing withdrawn assets against only THIS test's
+        // deposit amount, while actually redeeming a larger pre-existing
+        // position too).
+        uint256 shareBalanceBefore = router.upshiftLpToken().balanceOf(realUser);
+
+        vm.startPrank(realUser);
+        router.fxrp().approve(address(router), depositAmount);
+        router.depositToUpshift(depositAmount);
+
+        uint256 shareBalanceAfter = router.upshiftLpToken().balanceOf(realUser);
+        uint256 sharesFromThisDeposit = shareBalanceAfter - shareBalanceBefore;
+        console.log("vFXRP received from THIS deposit:", sharesFromThisDeposit);
+        console.log("vFXRP total balance (incl. any pre-existing):", shareBalanceAfter);
+        assertGt(sharesFromThisDeposit, 0, "should have received vFXRP shares from deposit");
+
+        uint256 fxrpBalanceBeforeWithdraw = router.fxrp().balanceOf(realUser);
+
+        router.upshiftLpToken().approve(address(router), sharesFromThisDeposit);
+        uint256 assetsReceived = router.withdrawFromUpshift(sharesFromThisDeposit);
+        vm.stopPrank();
+
+        console.log("Assets received from instant withdraw:", assetsReceived);
+
+        assertEq(
+            router.upshiftLpToken().balanceOf(realUser),
+            shareBalanceBefore,
+            "should be back to exactly the pre-existing share balance"
+        );
+        assertEq(
+            router.fxrp().balanceOf(realUser),
+            fxrpBalanceBeforeWithdraw + assetsReceived,
+            "FXRP balance should increase by assets received"
+        );
+        // Instant redemption charges a fee, so we should get back somewhat
+        // less than we put in — this isn't a bug, confirm it's in a sane
+        // range rather than asserting an exact break-even amount.
+        assertLt(assetsReceived, depositAmount, "instant redemption fee should apply");
+        assertGt(assetsReceived, (depositAmount * 90) / 100, "fee should not exceed 10% - sanity bound");
+    }
 }
 

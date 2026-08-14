@@ -38,6 +38,10 @@ contract VenueRouter is ReentrancyGuard {
     IFirelightVault public immutable firelight;
     ITokenizedVault public immutable upshift;
     IERC20 public immutable fxrp;
+    /// @notice Upshift's share token — a SEPARATE contract from the vault
+    /// itself (confirmed via lpTokenAddress()), unlike Firelight where the
+    /// vault IS the share token.
+    IERC20 public immutable upshiftLpToken;
 
     /// @notice FXRP's onchain decimals, fetched at deploy time rather than
     ///         hardcoded — same lesson learned on the earlier vault contract:
@@ -56,6 +60,8 @@ contract VenueRouter is ReentrancyGuard {
 
     event DepositedToFirelight(address indexed user, uint256 amount, uint256 shares);
     event DepositedToUpshift(address indexed user, uint256 amount, uint256 shares);
+    event WithdrawRequestedFromFirelight(address indexed user, uint256 shares, uint256 period);
+    event WithdrawnFromUpshift(address indexed user, uint256 shares, uint256 assetsReceived);
 
     error ZeroAmount();
     error FxrpAddressMismatch();
@@ -76,6 +82,7 @@ contract VenueRouter is ReentrancyGuard {
         fxrp = IERC20(firelightAsset);
         fxrpDecimals = IERC20Metadata(firelightAsset).decimals();
         fxrpUnit = 10 ** fxrpDecimals;
+        upshiftLpToken = IERC20(upshift.lpTokenAddress());
     }
 
     // --- Comparison (read-only) ---
@@ -160,5 +167,72 @@ contract VenueRouter is ReentrancyGuard {
         uint256 shares = upshift.deposit(address(fxrp), amount, msg.sender);
 
         emit DepositedToUpshift(msg.sender, amount, shares);
+    }
+
+    // --- Withdraw: Firelight only for now (see project docs) ---
+
+    /**
+     * @notice Requests a Firelight withdrawal. IMPORTANT: this does NOT
+     *         transfer assets immediately — Firelight's redeem() explicitly
+     *         "creates a withdrawal request", confirmed via its own
+     *         interface docs. The user must separately call claimWithdraw()
+     *         directly on the Firelight vault (NOT through this router —
+     *         see below) once the current period ends.
+     *
+     * @dev Requires the user to have approved this contract to spend
+     *      `shares` amount of Firelight vault tokens first (the vault
+     *      itself is the ERC-20 share token).
+     *
+     *      Claiming is intentionally NOT proxied through VenueRouter:
+     *      Firelight's claimWithdraw(uint256 period) takes no owner/account
+     *      parameter, so it operates on msg.sender directly. If VenueRouter
+     *      called it, Firelight would look up VenueRouter's own withdrawal
+     *      record (empty), not the user's. The user must call
+     *      claimWithdraw() directly against the Firelight vault address.
+     */
+    function requestWithdrawFromFirelight(uint256 shares) external nonReentrant returns (uint256 assets) {
+        if (shares == 0) revert ZeroAmount();
+
+        // redeem(shares, receiver, owner) — receiver and owner are both the
+        // calling user (msg.sender here, inside VenueRouter's own function
+        // context — NOT VenueRouter's address). Requires the user to have
+        // approved VenueRouter for `shares` beforehand, since owner !=
+        // msg.sender from Firelight's perspective (Firelight sees
+        // msg.sender == VenueRouter, owner == the user).
+        assets = firelight.redeem(shares, msg.sender, msg.sender);
+
+        emit WithdrawRequestedFromFirelight(msg.sender, shares, firelight.currentPeriod());
+    }
+
+    /**
+     * @notice Instantly withdraws from Upshift (for a fee — see
+     *         instantRedemptionFee() on the vault). Single transaction,
+     *         no waiting period, unlike Firelight's request/claim flow.
+     *
+     * @dev CONFIRMED via Coston2 Write Contract tab: instantRedeem(uint256
+     *      shares, address receiverAddr) — no owner parameter, unlike
+     *      Firelight's redeem(). Because there's no way to specify "burn
+     *      someone else's shares", this contract must first PULL the
+     *      user's vFXRP shares in via transferFrom (requires prior ERC20
+     *      approval to this contract on the LP token), then call
+     *      instantRedeem as itself — mirroring exactly how depositToUpshift
+     *      already handles the asset side.
+     */
+    function withdrawFromUpshift(uint256 shares) external nonReentrant returns (uint256 assets) {
+        if (shares == 0) revert ZeroAmount();
+
+        upshiftLpToken.safeTransferFrom(msg.sender, address(this), shares);
+
+        // instantRedeem sends assets DIRECTLY to msg.sender (the user), not
+        // to this contract — so we can't observe the result via our own
+        // balance. We also deliberately don't trust any return value (see
+        // ITokenizedVault.instantRedeem's doc comment — assuming one caused
+        // a real ABI-decode revert even though the underlying redemption
+        // succeeded). Balance-diff on the user is the robust alternative.
+        uint256 userBalanceBefore = fxrp.balanceOf(msg.sender);
+        upshift.instantRedeem(shares, msg.sender);
+        assets = fxrp.balanceOf(msg.sender) - userBalanceBefore;
+
+        emit WithdrawnFromUpshift(msg.sender, shares, assets);
     }
 }

@@ -1,1 +1,7 @@
 flare-foundry-starter/.git
+*.tar.gz
+*.zip
+.DS_Store
+node_modules/
+dist/
+.env
