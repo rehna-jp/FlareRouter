@@ -3,6 +3,7 @@ pragma solidity ^0.8.25;
 
 import { Test, console } from "forge-std/Test.sol";
 import { VenueRouter } from "../../src/venueRouter/VenueRouter.sol";
+import { IFirelightVault } from "../../src/firelight/IFirelightVault.sol";
 
 /**
  * Fork tests for VenueRouter. Requires a fork of Coston2, since the contract
@@ -143,6 +144,8 @@ contract VenueRouterTest is Test {
 
         uint256 sharesToWithdraw = shareBalance < 5 * 1e6 ? shareBalance : 5 * 1e6;
         uint256 periodAtRequest = router.firelight().currentPeriod();
+        // Firelight queues requests for the NEXT period (periodAtRequest + 1).
+        uint256 scheduledPeriod = periodAtRequest + 1;
         uint256 fxrpBalanceBefore = router.fxrp().balanceOf(realUser);
 
         vm.startPrank(realUser);
@@ -153,27 +156,32 @@ contract VenueRouterTest is Test {
         console.log("Requested withdrawal, shares:", sharesToWithdraw);
         console.log("Expected assets:", expectedAssets);
         console.log("Period at request:", periodAtRequest);
+        console.log("Scheduled period for claim:", scheduledPeriod);
 
         // No funds should have moved yet — this is a request, not a transfer.
         assertEq(
             router.fxrp().balanceOf(realUser), fxrpBalanceBefore, "no FXRP should move until claimed, not requested"
         );
 
-        // Warp past the period boundary so the withdrawal becomes claimable.
+        // In Firelight, a withdrawal scheduled for scheduledPeriod (periodAtRequest + 1)
+        // becomes claimable once scheduledPeriod has ended (i.e. when currentPeriod > scheduledPeriod).
+        // In Firelight, nextPeriodEnd() returns the end timestamp of the period following
+        // currentPeriod (i.e. the end of scheduledPeriod). Warping past it makes scheduledPeriod claimable.
         uint48 targetTime = router.firelight().nextPeriodEnd() + 1;
         vm.warp(targetTime);
         console.log("Warped to timestamp:", targetTime);
+        console.log("Current period after warp:", router.firelight().currentPeriod());
 
-        // Claim must be called directly by the user against Firelight, NOT
-        // through VenueRouter — see the comment on requestWithdrawFromFirelight
-        // for why (claimWithdraw is keyed to msg.sender with no owner param).
+
+        // Cache firelight reference so vm.prank applies to claimWithdraw, not router.firelight()
+        IFirelightVault firelight = router.firelight();
         vm.prank(realUser);
-        uint256 claimedAssets = router.firelight().claimWithdraw(periodAtRequest);
+        uint256 claimedAssets = firelight.claimWithdraw(scheduledPeriod);
 
         console.log("Claimed assets:", claimedAssets);
 
         assertTrue(
-            router.firelight().isWithdrawClaimed(periodAtRequest, realUser), "withdrawal should be marked claimed"
+            router.firelight().isWithdrawClaimed(scheduledPeriod, realUser), "withdrawal should be marked claimed"
         );
         assertEq(
             router.fxrp().balanceOf(realUser),
