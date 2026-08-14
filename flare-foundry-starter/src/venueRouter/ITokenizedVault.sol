@@ -50,9 +50,15 @@ interface ITokenizedVault {
 
     function previewDeposit(uint256 assets) external view returns (uint256 shares);
 
-    // --- Instant redemption ---
-
-    function instantRedeem(uint256 shares, address receiver) external returns (uint256 assets);
+    /// @dev CONFIRMED via Coston2 Write Contract tab: instantRedeem(uint256
+    ///      shares, address receiverAddr). NOTE: deliberately declared with
+    ///      NO return value here — we only confirmed the input parameters
+    ///      on-chain, not the actual return type, and assuming uint256
+    ///      caused a real ABI-decode revert (the underlying redemption
+    ///      executed correctly; only our own return-value decoding failed).
+    ///      Omitting the return clause means Solidity doesn't attempt to
+    ///      decode anything, regardless of what the callee actually returns.
+    function instantRedeem(uint256 shares, address receiverAddr) external;
 
     // --- Requested (delayed) redemption ---
 

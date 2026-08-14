@@ -1,66 +1,152 @@
 # FlareRoute — FXRP Yield Venue Router
 
-A smart contract router that **compares FXRP yield venues** on [Flare](https://flare.network/) and lets users deposit into their preferred venue in a single transaction.
+> **Real-time FXRP yield comparison & non-custodial deposit routing on Flare Network, powered by FTSOv2 enshrined oracles.**
 
-Currently scoped to the two yield venues confirmed live on **Coston2 testnet**:
+[![Coston2 Testnet](https://img.shields.io/badge/Network-Flare_Coston2-E62058?style=flat-square)](https://coston2-explorer.flare.network)
+[![Router Contract](https://img.shields.io/badge/Router_Verified-0xa97b...deb8-2DD4BF?style=flat-square)](https://coston2-explorer.flare.network/address/0xa97b42443afb6279936e0641e77143b67047deb8)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](LICENSE)
 
-| Venue | Vault Address | Type |
-|-------|--------------|------|
-| **Firelight** | `0xC90D6847747b85d1fa2E07859869fb9fB72c0361` | ERC-4626 |
-| **Upshift** | `0x24c1a47cD5e8473b64EAB2a94515a196E10C7C81` | Tokenized Vault |
+---
 
-## How It Works
+## 🌟 Overview
 
-1. **Compare** — `getAllSnapshots()` returns both venues' total assets, share price, and TVL in USD (via Flare's FTSOv2 XRP/USD price feed) in a single call.
-2. **Route** — `depositToFirelight(amount)` or `depositToUpshift(amount)` pulls FXRP from the user, approves the chosen vault, and deposits — minting vault shares directly to the caller.
+**FlareRoute** solves liquidity fragmentation for FXRP yield on Flare. Instead of navigating multiple decentralized apps, verifying vault mechanisms, and manually calculating exchange rates, users can:
 
-The router cross-checks that both vaults reference the **same FXRP token** at deploy time, and reads FXRP's decimals on-chain rather than hardcoding them.
+1. **Compare** real-time Total Value Locked (TVL), share prices, and accrued yield across all live yield venues in a single on-chain query.
+2. **Route** deposits or withdrawals into their chosen venue in a single transaction with automatic token allowance management.
+3. **Track** their entire cross-venue FXRP portfolio, share allocations, and implied asset values in one non-custodial interface.
 
-## Deployed Contracts
+---
 
-| Contract | Address | Explorer |
-|----------|---------|----------|
-| **VenueRouter** | `0x85D76C148d2C4cDddDbcb93b97fbeD63ea86de4B` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0x85d76c148d2c4cddddbcb93b97fbed63ea86de4b) |
-| FXRP | `0x0b6A3645c240605887a5532109323A3E12273dc7` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0x0b6A3645c240605887a5532109323A3E12273dc7) |
+## 🏛️ Live Deployed Contracts (Flare Coston2 Testnet)
 
-## Getting Started
+| Component | Address | Explorer | Standard |
+|-----------|---------|----------|----------|
+| **VenueRouter** | `0xa97b42443afb6279936e0641e77143b67047deb8` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0xa97b42443afb6279936e0641e77143b67047deb8) | Core Aggregator |
+| **FXRP Token** | `0x0b6A3645c240605887a5532109323A3E12273dc7` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0x0b6A3645c240605887a5532109323A3E12273dc7) | ERC-20 (6 Decimals) |
+| **Firelight Vault** | `0xC90D6847747b85d1fa2E07859869fb9fB72c0361` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0xC90D6847747b85d1fa2E07859869fb9fB72c0361) | ERC-4626 Vault |
+| **Upshift Vault** | `0x24c1a47cD5e8473b64EAB2a94515a196E10C7C81` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0x24c1a47cD5e8473b64EAB2a94515a196E10C7C81) | Tokenized Vault |
+| **Upshift LP Token** | `0xe084F7328DDaB082a139b880782dCC424d20a1DB` | [Coston2 Explorer](https://coston2-explorer.flare.network/address/0xe084F7328DDaB082a139b880782dCC424d20a1DB) | ERC-20 (`vFXRP`) |
 
-### Prerequisites
+---
 
-- [Foundry](https://getfoundry.sh/) installed
+## ⚡ How It Works
 
-### Installation
-
-```bash
-git clone https://github.com/rehna-jp/FlareRouter.git
-cd FlareRouter
-forge soldeer install
+```
+                        ┌───────────────────────────────┐
+                        │   Flare FTSOv2 Oracle (XRP)   │
+                        └──────────────┬────────────────┘
+                                       │ Real-time XRP/USD Feed
+                                       ▼
+ ┌────────────────┐         ┌─────────────────────────┐         ┌───────────────────────┐
+ │                ├────────►│     VenueRouter.sol     ├────────►│ Firelight Vault       │
+ │   User Wallet  │ Deposit │                         │ Deposit │ (ERC-4626 standard)   │
+ │                │◄────────┤ - getAllSnapshots()     ├────────►├───────────────────────┤
+ │                │ Shares  │ - depositToFirelight()  │ Deposit │ Upshift Vault         │
+ └────────────────┘         │ - depositToUpshift()    │         │ (Tokenized LP shares) │
+                            └─────────────────────────┘         └───────────────────────┘
 ```
 
-### Configuration
+1. **On-Chain Telemetry Aggregation**: `VenueRouter.getAllSnapshots()` reads total assets, total supply, share prices, and computes live USD TVL using Flare's enshrined **FTSOv2 XRP/USD oracle feed**.
+2. **Single-Transaction Routing**:
+   - `depositToFirelight(amount)`: Pulls FXRP, approves Firelight vault, deposits, and mints `FIRE` shares directly to caller.
+   - `depositToUpshift(amount)`: Pulls FXRP, deposits into Upshift vault, and mints `vFXRP` shares directly to caller.
+3. **Decoupled Redemptions**:
+   - **Upshift**: Single-transaction instant exit via `withdrawFromUpshift(shares)`.
+   - **Firelight**: Two-step epoch queue (`requestWithdrawFromFirelight` -> wait for epoch end -> direct on-vault `claimWithdraw`).
 
-```bash
-cp .env.example .env
+---
+
+## 🖥️ Frontend Architecture
+
+The frontend is built with **React 19**, **TypeScript**, **Vite**, **Tailwind CSS 4**, and **Wagmi v3**:
+
+- **🎨 Premium DeFi Aesthetic**: Dark obsidian background with animated floating ambient glow orbs, glassmorphism panels (`backdrop-filter: blur(20px)`), and micro-animations on telemetry refresh.
+- **🧭 Multi-Page Client Routing**:
+  - **`/` (Dashboard)**: Protocol statistics bar (TVL, FXRP in Vaults, Oracle Price, Active Venues), live venue cards, and ecosystem roadmap.
+  - **`/route` (Route & Yield)**: Uniswap-inspired centered swap card with venue selectors, deposit/withdraw tabs, MAX balance autofill, and 2-step approval guidance.
+  - **`/portfolio` (Portfolio)**: User position breakdown, share holdings, implied FXRP equivalent valuations, and quick deep-links.
+- **⚡ Reactive On-Chain State Machines**: Dedicated custom hooks (`useVenueData`, `useDeposit`, `useWithdraw`) managing contract calls, pending states, allowance approvals, and error handling.
+- **🔍 Wallet Experience**: Modal with address copy, C2FLR native gas balance display, Coston2 network badge, and Blockscout explorer links.
+
+---
+
+## 📁 Repository Structure
+
+```
+FlareRoute/
+├── flareroute-frontend/           # React 19 + TypeScript + Vite Frontend
+│   ├── src/
+│   │   ├── components/            # Reusable UI & DeFi Components
+│   │   │   ├── ConnectWallet.tsx  # Wallet modal & dropdown
+│   │   │   ├── DepositCard.tsx    # Uniswap-style swap card
+│   │   │   ├── Navbar.tsx         # Sticky glass navigation & live ticker
+│   │   │   ├── Skeleton.tsx       # Shimmer loading placeholders
+│   │   │   ├── StatsBar.tsx       # Protocol statistics bar
+│   │   │   ├── Toast.tsx          # Transaction notification toasts
+│   │   │   ├── UserPosition.tsx   # Portfolio holdings summary
+│   │   │   ├── VenueCard.tsx      # Venue showcase card
+│   │   │   └── WithdrawCard.tsx   # Instant & epoch withdraw card
+│   │   ├── hooks/                 # Web3 state machine hooks
+│   │   │   ├── useDeposit.ts      # 2-step approval & deposit logic
+│   │   │   ├── useVenueData.ts    # Telemetry snapshot & FTSO oracle hook
+│   │   │   └── useWithdraw.ts     # Instant & epoch redemption hook
+│   │   ├── pages/                 # Route pages
+│   │   │   ├── DashboardPage.tsx  # Main dashboard
+│   │   │   ├── PortfolioPage.tsx  # Portfolio manager
+│   │   │   └── RoutePage.tsx      # Route swap interface
+│   │   ├── contracts.ts           # Deployed addresses & minimal ABIs
+│   │   ├── index.css              # Design tokens & glassmorphism CSS
+│   │   ├── router.tsx             # Zero-dependency client-side SPA router
+│   │   └── wagmi.ts               # Wagmi & Viem Coston2 configuration
+│   └── package.json
+│
+├── flare-foundry-starter/         # Smart Contracts (Foundry)
+│   ├── src/
+│   │   ├── venueRouter/
+│   │   │   ├── VenueRouter.sol    # Core router contract
+│   │   │   └── ITokenizedVault.sol# Upshift vault interface
+│   │   └── firelight/
+│   │       └── IFirelightVault.sol# Firelight ERC-4626 interface
+│   ├── script/
+│   │   └── venueRouter/
+│   │       └── Deploy.s.sol       # Coston2 broadcast deployment script
+│   └── test/
+│       └── venueRouter/
+│           └── VenueRouter.t.sol  # Fork integration tests
+└── README.md
 ```
 
-Set `PRIVATE_KEY` to a funded wallet on Coston2. The `.env.example` contains all available configuration options including RPC URLs, API keys, and explorer endpoints.
+---
 
-### Build
+## 🚀 Getting Started
+
+### 1. Frontend Development
 
 ```bash
+cd flareroute-frontend
+npm install
+npm run dev
+```
+
+Build for production:
+```bash
+npm run build
+```
+
+### 2. Smart Contracts (Foundry)
+
+```bash
+cd flare-foundry-starter
 forge build
 ```
 
-### Test
-
-The tests fork Coston2 to read live vault state and FTSO prices:
-
+Run fork tests against Coston2 live state:
 ```bash
-forge test --match-contract VenueRouterTest --fork-url coston2 -vvv
+forge test --match-contract VenueRouterTest --fork-url https://coston2-api.flare.network/ext/C/rpc -vvv
 ```
 
-### Deploy
-
+Deploy to Coston2:
 ```bash
 source .env && forge script script/venueRouter/Deploy.s.sol:Deploy \
   --rpc-url coston2 --private-key $PRIVATE_KEY --broadcast \
@@ -68,33 +154,26 @@ source .env && forge script script/venueRouter/Deploy.s.sol:Deploy \
   --verifier-url https://coston2-explorer.flare.network/api/
 ```
 
-## Project Structure
+---
 
-```
-src/
-├── venueRouter/
-│   ├── VenueRouter.sol       # Core router: compare venues + route deposits
-│   └── ITokenizedVault.sol   # Upshift vault interface (non-ERC-4626)
-├── firelight/
-│   └── IFirelightVault.sol   # Firelight vault interface (ERC-4626)
-└── utils/                    # Shared utilities
+## 🗺️ Ecosystem Pipeline (Coming to FlareRoute)
 
-script/
-└── venueRouter/
-    └── Deploy.s.sol          # Deployment script for VenueRouter
+| Venue | Protocol Type | Status |
+|-------|---------------|--------|
+| **Kinetic Market** | Algorithmic Lending & Borrowing | Mainnet Live · Router Integration in Progress |
+| **Enosys Loans** | CDP & FXRP Collateralized Minting | Mainnet Live · Router Integration in Progress |
+| **Mystic (Morpho)** | P2P Vault Infrastructure | Mainnet Live · Router Integration in Progress |
 
-test/
-└── venueRouter/
-    └── VenueRouter.t.sol     # Fork tests against live Coston2 state
-```
+---
 
-## Architecture Decisions
+## 🛡️ Security & Design Principles
 
-- **No hardcoded FXRP address** — resolved at deploy time from the vaults' `asset()` calls, with a cross-check that both vaults agree.
-- **FXRP decimals read on-chain** — FXRP uses 6 decimals (not 18). The router reads `decimals()` at deploy time to correctly normalize TVL and share price calculations.
-- **FTSOv2 price feed** — XRP/USD price for TVL calculation comes from Flare's enshrined oracle, not a third-party feed.
-- **Two confirmed venues only** — other venues (Kinetic, Enosys Loans, Mystic) are referenced in project docs but not routed through this contract because they are either mainnet-only or read-only on Coston2.
+- **Non-Custodial**: `VenueRouter` does not hold user funds. It immediately deposits into target vaults and issues shares directly to the caller.
+- **Dynamic Decimals**: FXRP's 6 decimals and share decimals are read dynamically on-chain to eliminate precision mismatch bugs.
+- **Enshrined Oracles**: TVL computations rely directly on Flare's enshrined FTSOv2 price feeds without third-party dependencies.
 
-## License
+---
 
-MIT
+## 📜 License
+
+MIT License. Built for the Flare ecosystem.

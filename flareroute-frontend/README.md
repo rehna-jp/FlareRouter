@@ -1,32 +1,35 @@
-# React + TypeScript + Vite
+# FlareRoute — Frontend Application
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Modern, non-custodial DeFi dashboard and routing interface for Flare Network's FXRP yield ecosystem.
 
-Currently, two official plugins are available:
+## 🚀 Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Protocol Dashboard**: Real-time Aggregated TVL, Total FXRP Locked, and FTSOv2 XRP/USD Oracle Price feeds.
+- **Venue Comparison**: Live side-by-side performance metrics for Firelight (ERC-4626) and Upshift (`vFXRP` LP) vaults.
+- **Uniswap-Inspired Route Card**: Clean, focused deposit and withdrawal workflows with token allowance automation.
+- **Portfolio Manager**: Non-custodial tracking of vault share balances and underlying FXRP asset valuations.
+- **Glassmorphism UI**: High-end dark theme design system with animated ambient background lighting and micro-animations.
 
-## React Compiler
+## 🛠️ Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Framework**: React 19 + TypeScript + Vite
+- **Styling**: Tailwind CSS 4 + Custom Glassmorphism Design Tokens
+- **Web3**: Wagmi v3 + Viem
+- **State & Queries**: TanStack Query v5
+- **Network**: Flare Testnet Coston2 (Chain ID: `114`)
 
-## Expanding the Oxlint configuration
+## 💻 Local Development
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+```bash
+# Install dependencies
+npm install
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+# Start development server
+npm run dev
+
+# Run TypeScript type check
+npx tsc -b --noEmit
+
+# Build for production
+npm run build
 ```
-
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
